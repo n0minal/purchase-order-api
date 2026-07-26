@@ -1,0 +1,16 @@
+node_modules/
+dist/
+out/
+
+.env
+.env.local
+
+purchase-orders/
+
+# Working documentation, kept local only
+docs/
+
+.DS_Store
+*.log
+
+.vscode
