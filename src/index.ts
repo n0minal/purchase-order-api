@@ -4,7 +4,7 @@ import { DearAPIClient } from './client.ts'
 import { loadConfig } from './config.ts'
 import { DATE_FILTERS, DEFAULT_LOOKBACK_MS, type DateFilter } from './constants.ts'
 import { FileWriter } from './file-writer.ts'
-import { PurchaseOrderFetcher } from './purchase-orders.ts'
+import { PurchaseOrderFetcher } from './purchase-order-fetcher.ts'
 
 /**
  * Entry point. Reads settings and arguments, wires the parts, runs once, reports.

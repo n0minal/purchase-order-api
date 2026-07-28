@@ -17,5 +17,8 @@
     "@vitest/coverage-v8": "^4.1.10",
     "typescript": "^5.7.3",
     "vitest": "^4.1.10"
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
   }
 }

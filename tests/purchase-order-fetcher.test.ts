@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { PurchaseOrderFetcher, listPurchaseOrders } from '../src/purchase-orders.ts'
+import { PurchaseOrderFetcher } from '../src/purchase-order-fetcher.ts'
 import type {
   ApiReader,
   FetchOptions,
@@ -9,25 +9,14 @@ import type {
   RequestOptions,
 } from '../src/types.ts'
 import {
+  baseOptions,
   collectWrites,
+  isList,
   jsonResponse,
   listPage,
-  silentLogger,
   stubFetch,
   testClient,
 } from './helpers.ts'
-
-const SINCE = new Date('2026-01-01T00:00:00.000Z')
-
-/**
- * Options every test starts from: a fixed date and no console noise.
- *
- * @param overrides - fields to change for one specific test
- * @returns A complete FetchOptions.
- */
-function baseOptions(overrides: Partial<FetchOptions> = {}): FetchOptions {
-  return { since: SINCE, logger: silentLogger, ...overrides }
-}
 
 /**
  * Builds a fetcher and runs it, which is what almost every test here does once.
@@ -45,10 +34,6 @@ function runFetch(
   return new PurchaseOrderFetcher(client, writer, options).run()
 }
 
-function isList(url: URL): boolean {
-  return url.pathname.endsWith('/purchaseList')
-}
-
 describe('pagination', () => {
   it('walks every page and stops once Total is reached', async () => {
     const { fetch, requests } = stubFetch((url) => {
@@ -64,21 +49,6 @@ describe('pagination', () => {
     expect(summary.succeeded).toBe(3)
     expect([...written.keys()].sort()).toEqual(['a', 'b', 'c'])
     expect(requests.filter((r) => isList(r.url))).toHaveLength(2)
-  })
-
-  it('stops on an empty page even when Total overstates the result set', async () => {
-    const { fetch } = stubFetch((url) => {
-      if (!isList(url)) return jsonResponse({})
-      const page = Number(url.searchParams.get('Page'))
-      return page === 1 ? listPage(['a'], 9_999) : listPage([], 9_999)
-    })
-
-    const ids = []
-    for await (const id of listPurchaseOrders(testClient(fetch), baseOptions({ pageSize: 2 }))) {
-      ids.push(id)
-    }
-
-    expect(ids).toEqual(['a'])
   })
 
   it('fetches an order only once when page drift lists it twice', async () => {
@@ -266,24 +236,6 @@ describe('validation', () => {
     expect(summary.succeeded).toBe(1)
   })
 
-  it('keeps paging when a whole page holds nothing usable', async () => {
-    // Skipped records still count towards the total. If they did not, paging would ask
-    // for the same page forever.
-    const { fetch } = stubFetch((url) => {
-      if (!isList(url)) return jsonResponse({ ID: 'x' })
-      const page = Number(url.searchParams.get('Page'))
-      if (page === 1) return jsonResponse({ Total: 3, PurchaseList: [{ ID: null }, {}] })
-      return listPage(['c'], 3)
-    })
-
-    const ids = []
-    for await (const id of listPurchaseOrders(testClient(fetch), baseOptions({ pageSize: 2 }))) {
-      ids.push(id)
-    }
-
-    expect(ids).toEqual(['c'])
-  })
-
   it('writes the detail payload byte for byte as it arrived', async () => {
     // The files are the product, so nothing may reshape them, including fields added
     // after this code was written. Writing a re-serialised copy would rewrite number
@@ -312,6 +264,20 @@ describe('validation', () => {
     expect(summary.succeeded).toBe(0)
     expect(summary.failedCount).toBe(1)
     expect(summary.failures[0]!.error).toMatch(/not valid JSON/)
+    expect(written.size).toBe(0)
+  })
+
+  it('records a failure when a detail body is JSON but not an object', async () => {
+    // A scalar or an array is parseable, but archiving it as an order would be wrong.
+    const { fetch } = stubFetch((url) =>
+      isList(url) ? listPage(['a'], 1) : jsonResponse([1, 2, 3]),
+    )
+
+    const { written, writer } = collectWrites()
+    const summary = await runFetch(testClient(fetch), writer, baseOptions())
+
+    expect(summary.failedCount).toBe(1)
+    expect(summary.failures[0]!.error).toMatch(/failed validation/)
     expect(written.size).toBe(0)
   })
 })
@@ -457,7 +423,11 @@ describe('the PurchaseOrderFetcher class', () => {
     const { fetch } = stubFetch((url) =>
       isList(url) ? listPage(['a'], 1) : jsonResponse({ ID: 'a' }),
     )
-    const fetcher = new PurchaseOrderFetcher(testClient(fetch), collectWrites().writer, baseOptions())
+    const fetcher = new PurchaseOrderFetcher(
+      testClient(fetch),
+      collectWrites().writer,
+      baseOptions(),
+    )
 
     const first = await fetcher.run()
     const second = await fetcher.run()

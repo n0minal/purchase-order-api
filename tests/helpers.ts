@@ -1,11 +1,34 @@
 import { DearAPIClient } from '../src/client.ts'
-import type { Config, Logger, OrderWriter } from '../src/types.ts'
+import type { Config, FetchOptions, Logger, OrderWriter } from '../src/types.ts'
 
 /**
  * Discards everything. Passed wherever a Logger is accepted, so expected retries and
  * failures do not bury the test report.
  */
 export const silentLogger: Logger = { warn: () => {}, error: () => {} }
+
+/** The fixed lower bound every test fetches from. */
+export const SINCE = new Date('2026-01-01T00:00:00.000Z')
+
+/**
+ * Options every test starts from: a fixed date and no console noise.
+ *
+ * @param overrides - fields to change for one specific test
+ * @returns A complete FetchOptions.
+ */
+export function baseOptions(overrides: Partial<FetchOptions> = {}): FetchOptions {
+  return { since: SINCE, logger: silentLogger, ...overrides }
+}
+
+/**
+ * Tells the two stubbed endpoints apart.
+ *
+ * @param url - the URL a stub fetch received
+ * @returns True when the request is for the purchase list.
+ */
+export function isList(url: URL): boolean {
+  return url.pathname.endsWith('/purchaseList')
+}
 
 /**
  * Builds a Config for tests, with small values so runs finish quickly.
