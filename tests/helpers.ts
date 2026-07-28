@@ -1,14 +1,14 @@
-import { DearAPIClient } from '../src/client.ts'
-import type { Config, FetchOptions, Logger, OrderWriter } from '../src/types.ts'
+import { DearApiClient } from '../src/client.ts';
+import type { Config, FetchOptions, JsonValue, Logger, OrderWriter } from '../src/types.ts';
 
 /**
  * Discards everything. Passed wherever a Logger is accepted, so expected retries and
  * failures do not bury the test report.
  */
-export const silentLogger: Logger = { warn: () => {}, error: () => {} }
+export const silentLogger: Logger = { warn: () => {}, error: () => {} };
 
 /** The fixed lower bound every test fetches from. */
-export const SINCE = new Date('2026-01-01T00:00:00.000Z')
+export const SINCE = new Date('2026-01-01T00:00:00.000Z');
 
 /**
  * Options every test starts from: a fixed date and no console noise.
@@ -16,8 +16,8 @@ export const SINCE = new Date('2026-01-01T00:00:00.000Z')
  * @param overrides - fields to change for one specific test
  * @returns A complete FetchOptions.
  */
-export function baseOptions(overrides: Partial<FetchOptions> = {}): FetchOptions {
-  return { since: SINCE, logger: silentLogger, ...overrides }
+export function baseFetchOptions(overrides: Partial<FetchOptions> = {}): FetchOptions {
+  return { since: SINCE, logger: silentLogger, ...overrides };
 }
 
 /**
@@ -26,8 +26,8 @@ export function baseOptions(overrides: Partial<FetchOptions> = {}): FetchOptions
  * @param url - the URL a stub fetch received
  * @returns True when the request is for the purchase list.
  */
-export function isList(url: URL): boolean {
-  return url.pathname.endsWith('/purchaseList')
+export function isPurchaseListRequest(url: URL): boolean {
+  return url.pathname.endsWith('/purchaseList');
 }
 
 /**
@@ -49,21 +49,21 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     requestTimeoutMs: 1_000,
     maxRetries: 2,
     ...overrides,
-  }
+  };
 }
 
 /**
  * Builds a client wired to a stand-in fetch and a silent logger.
  *
- * @param fetchImpl - the fetch stand-in, usually from stubFetch
+ * @param fetchFunction - the fetch stand-in, usually from stubFetch
  * @param overrides - Config fields to change for one specific test
- * @returns A DearAPIClient ready to use in a test.
+ * @returns A DearApiClient ready to use in a test.
  */
 export function testClient(
-  fetchImpl: typeof fetch,
+  fetchFunction: typeof fetch,
   overrides: Partial<Config> = {},
-): DearAPIClient {
-  return new DearAPIClient(testConfig(overrides), fetchImpl, silentLogger)
+): DearApiClient {
+  return new DearApiClient(testConfig(overrides), fetchFunction, silentLogger);
 }
 
 /**
@@ -73,27 +73,27 @@ export function testClient(
  * @returns The map of what was written, and the writer to pass to a fetcher.
  */
 export function collectWrites(): { written: Map<string, string>; writer: OrderWriter } {
-  const written = new Map<string, string>()
+  const written = new Map<string, string>();
   return {
     written,
     writer: {
       write: async (id, contents) => {
-        written.set(id, contents)
+        written.set(id, contents);
       },
     },
-  }
+  };
 }
 
 /** One request the stub saw, kept so tests can assert on the URL and headers. */
 export interface RecordedRequest {
-  url: URL
-  headers: Headers
+  url: URL;
+  headers: Headers;
 }
 
 /**
  * Builds a stand-in for fetch that records calls and returns canned responses.
  *
- * DearAPIClient takes its fetch as a constructor argument, so a plain function is enough
+ * DearApiClient takes its fetch as a constructor argument, so a plain function is enough
  * and no mock server library is needed.
  *
  * @param handler - returns the response for a given URL. Also receives the zero based
@@ -101,18 +101,18 @@ export interface RecordedRequest {
  * @returns The stub fetch and the array of requests it has seen so far.
  */
 export function stubFetch(handler: (url: URL, callIndex: number) => Response | Promise<Response>): {
-  fetch: typeof fetch
-  requests: RecordedRequest[]
+  fetch: typeof fetch;
+  requests: RecordedRequest[];
 } {
-  const requests: RecordedRequest[] = []
+  const requests: RecordedRequest[] = [];
 
-  const fetchImpl: typeof fetch = async (input, init) => {
-    const url = new URL(typeof input === 'string' ? input : String(input))
-    requests.push({ url, headers: new Headers(init?.headers) })
-    return await handler(url, requests.length - 1)
-  }
+  const fetchFunction: typeof fetch = async (input, init) => {
+    const url = new URL(typeof input === 'string' ? input : String(input));
+    requests.push({ url, headers: new Headers(init?.headers) });
+    return await handler(url, requests.length - 1);
+  };
 
-  return { fetch: fetchImpl, requests }
+  return { fetch: fetchFunction, requests };
 }
 
 /**
@@ -122,12 +122,12 @@ export function stubFetch(handler: (url: URL, callIndex: number) => Response | P
  * @param init - status and headers to override the defaults
  * @returns A Response with status 200 and a JSON content type unless overridden.
  */
-export function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
+export function jsonResponse(body: JsonValue, init: ResponseInit = {}): Response {
   return new Response(JSON.stringify(body), {
     status: 200,
     headers: { 'content-type': 'application/json' },
     ...init,
-  })
+  });
 }
 
 /**
@@ -137,6 +137,6 @@ export function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
  * @param total - value to report in the Total field of the envelope
  * @returns A Response shaped like a purchase list page.
  */
-export function listPage(ids: string[], total: number): Response {
-  return jsonResponse({ Total: total, PurchaseList: ids.map((ID) => ({ ID })) })
+export function purchaseListPageResponse(ids: string[], total: number): Response {
+  return jsonResponse({ Total: total, PurchaseList: ids.map((ID) => ({ ID })) });
 }

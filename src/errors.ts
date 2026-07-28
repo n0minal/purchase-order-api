@@ -1,6 +1,6 @@
 /** Error raised when a request fails or comes back in a shape we did not expect. */
 export class DearApiError extends Error {
-  readonly status: number | undefined
+  readonly status: number | undefined;
 
   /**
    * Creates an API error, keeping the HTTP status when there was one.
@@ -10,8 +10,8 @@ export class DearApiError extends Error {
    * @param options - standard Error options, used here to keep the original cause
    */
   constructor(message: string, status?: number, options?: ErrorOptions) {
-    super(message, options)
-    this.name = 'DearApiError'
-    this.status = status
+    super(message, options);
+    this.name = 'DearApiError';
+    this.status = status;
   }
 }

@@ -1,8 +1,8 @@
-import { DearApiError } from './errors.ts'
-import { RateLimiter } from './rate-limiter.ts'
-import { RetryPolicy } from './retry-policy.ts'
-import { sleep } from './sleep.ts'
-import type { Config, Logger, RequestOptions } from './types.ts'
+import { DearApiError } from './errors.ts';
+import { RateLimiter } from './rate-limiter.ts';
+import { RetryPolicy } from './retry-policy.ts';
+import { sleep } from './sleep.ts';
+import type { Config, JsonValue, Logger, RequestOptions } from './types.ts';
 
 /**
  * A small wrapper around fetch for the Cin7 Core API.
@@ -12,27 +12,27 @@ import type { Config, Logger, RequestOptions } from './types.ts'
  * When to retry and how long to wait is the RetryPolicy's decision; this class only
  * runs the loop.
  */
-export class DearAPIClient {
-  private readonly config: Config
-  private readonly fetchImpl: typeof fetch
-  private readonly logger: Logger
-  private readonly limiter: RateLimiter
-  private readonly retryPolicy: RetryPolicy
+export class DearApiClient {
+  private readonly config: Config;
+  private readonly fetchFunction: typeof fetch;
+  private readonly logger: Logger;
+  private readonly limiter: RateLimiter;
+  private readonly retryPolicy: RetryPolicy;
 
   /**
    * Creates a client bound to one set of credentials.
    *
    * @param config - base URL, credentials, timeout, retry and rate limit settings
-   * @param fetchImpl - the fetch function to use. Tests pass a stand-in, which is why
-   * no mock server library is needed.
+   * @param fetchFunction - the fetch function to use. Tests pass a stand-in, which is
+   * why no mock server library is needed.
    * @param logger - where retry warnings go. Defaults to console.
    */
-  constructor(config: Config, fetchImpl: typeof fetch = fetch, logger: Logger = console) {
-    this.config = config
-    this.fetchImpl = fetchImpl
-    this.logger = logger
-    this.limiter = new RateLimiter(60_000 / config.callsPerMinute)
-    this.retryPolicy = new RetryPolicy(config.maxRetries)
+  constructor(config: Config, fetchFunction: typeof fetch = fetch, logger: Logger = console) {
+    this.config = config;
+    this.fetchFunction = fetchFunction;
+    this.logger = logger;
+    this.limiter = new RateLimiter(60_000 / config.callsPerMinute);
+    this.retryPolicy = new RetryPolicy(config.maxRetries);
   }
 
   /**
@@ -48,18 +48,18 @@ export class DearAPIClient {
    * @throws DearApiError if the request fails or the body is not JSON, or whatever read
    * throws.
    */
-  async get<T>(options: RequestOptions, read: (body: unknown) => T): Promise<T> {
-    const text = await this.requestWithRetry(options)
+  async get<T>(options: RequestOptions, read: (body: JsonValue) => T): Promise<T> {
+    const text = await this.requestWithRetry(options);
 
-    let body: unknown
+    let body: JsonValue;
     try {
-      body = JSON.parse(text)
+      body = JSON.parse(text);
     } catch (cause) {
       throw new DearApiError(`GET ${options.path} returned a body that is not JSON`, undefined, {
         cause,
-      })
+      });
     }
-    return read(body)
+    return read(body);
   }
 
   /**
@@ -73,7 +73,7 @@ export class DearAPIClient {
    * @throws DearApiError if the request fails.
    */
   async getText(options: RequestOptions): Promise<string> {
-    return this.requestWithRetry(options)
+    return this.requestWithRetry(options);
   }
 
   /**
@@ -87,11 +87,11 @@ export class DearAPIClient {
    * @returns The finished URL as a string.
    */
   private buildUrl(path: string, query: RequestOptions['query'] = {}): string {
-    const url = new URL(path, this.config.baseUrl)
+    const url = new URL(path, this.config.baseUrl);
     for (const [key, value] of Object.entries(query)) {
-      if (value !== undefined && value !== '') url.searchParams.set(key, String(value))
+      if (value !== undefined && value !== '') url.searchParams.set(key, String(value));
     }
-    return url.toString()
+    return url.toString();
   }
 
   /**
@@ -105,21 +105,22 @@ export class DearAPIClient {
    * @throws DearApiError on a non-retryable status, or once attempts run out.
    */
   private async requestWithRetry(options: RequestOptions): Promise<string> {
-    const url = this.buildUrl(options.path, options.query)
-    let lastError: unknown
+    const url = this.buildUrl(options.path, options.query);
+    // A thrown value can be anything at all, which is the one case unknown is for.
+    let lastError: unknown;
 
     for (let attempt = 0; attempt <= this.retryPolicy.maxRetries; attempt++) {
-      options.signal?.throwIfAborted()
+      options.signal?.throwIfAborted();
 
       // Every attempt is a call against the rate limit, so every attempt claims a slot.
-      await this.limiter.wait(options.signal)
+      await this.limiter.wait(options.signal);
 
       // Both the caller's signal and our own timeout need to be able to stop this request.
-      const timeout = AbortSignal.timeout(this.config.requestTimeoutMs)
-      const signal = options.signal ? AbortSignal.any([options.signal, timeout]) : timeout
+      const timeout = AbortSignal.timeout(this.config.requestTimeoutMs);
+      const signal = options.signal ? AbortSignal.any([options.signal, timeout]) : timeout;
 
       try {
-        const response = await this.fetchImpl(url, {
+        const response = await this.fetchFunction(url, {
           method: 'GET',
           headers: {
             'Content-Type': 'application/json',
@@ -128,46 +129,46 @@ export class DearAPIClient {
             'api-auth-applicationkey': this.config.applicationKey,
           },
           signal,
-        })
+        });
 
-        if (response.ok) return await response.text()
+        if (response.ok) return await response.text();
 
         // Read the body so the connection can go back in the pool.
-        const body = await response.text().catch(() => '')
+        const body = await response.text().catch(() => '');
         const error = new DearApiError(
           `GET ${options.path} failed: ${response.status} ${response.statusText}${
             body ? `: ${body.slice(0, 200)}` : ''
           }`,
           response.status,
-        )
+        );
 
-        if (!this.retryPolicy.shouldRetry(response.status)) throw error
-        lastError = error
+        if (!this.retryPolicy.shouldRetry(response.status)) throw error;
+        lastError = error;
 
-        const wait = this.retryPolicy.delayFor(attempt, response.headers.get('retry-after'))
+        const wait = this.retryPolicy.delayFor(attempt, response.headers.get('retry-after'));
         if (attempt < this.retryPolicy.maxRetries) {
           this.logger.warn(
             `Retrying ${options.path} after ${response.status}, ` +
               `attempt ${attempt + 1}, waiting ${Math.round(wait)}ms`,
-          )
-          await sleep(wait, options.signal)
+          );
+          await sleep(wait, options.signal);
         }
       } catch (error) {
         // Cancelling is a choice the caller made, so it is never retried.
-        if (options.signal?.aborted) throw error
+        if (options.signal?.aborted) throw error;
         if (error instanceof DearApiError && !this.retryPolicy.shouldRetry(error.status ?? 0)) {
-          throw error
+          throw error;
         }
 
-        lastError = error
+        lastError = error;
         if (attempt < this.retryPolicy.maxRetries) {
-          const wait = this.retryPolicy.delayFor(attempt)
-          const message = error instanceof Error ? error.message : String(error)
+          const wait = this.retryPolicy.delayFor(attempt);
+          const message = error instanceof Error ? error.message : String(error);
           this.logger.warn(
             `Retrying ${options.path} after a network error, ` +
               `attempt ${attempt + 1}, waiting ${Math.round(wait)}ms: ${message}`,
-          )
-          await sleep(wait, options.signal)
+          );
+          await sleep(wait, options.signal);
         }
       }
     }
@@ -176,6 +177,6 @@ export class DearAPIClient {
       `GET ${options.path} failed after ${this.retryPolicy.maxRetries + 1} attempts`,
       lastError instanceof DearApiError ? lastError.status : undefined,
       { cause: lastError },
-    )
+    );
   }
 }

@@ -1,7 +1,7 @@
-import { mkdir, rename, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { mkdir, rename, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 
-import type { OrderWriter } from './types.ts'
+import type { OrderWriter } from './types.ts';
 
 /**
  * Turns an order ID into something safe to use as a filename, so an ID holding ".." or
@@ -11,8 +11,8 @@ import type { OrderWriter } from './types.ts'
  * @returns A string of letters, digits, dots, dashes and underscores only.
  */
 export function safeFileName(id: string): string {
-  const cleaned = id.replace(/[^A-Za-z0-9._-]/g, '_')
-  return /^\.+$/.test(cleaned) ? '_' : cleaned
+  const cleaned = id.replace(/[^A-Za-z0-9._-]/g, '_');
+  return /^\.+$/.test(cleaned) ? '_' : cleaned;
 }
 
 /**
@@ -25,15 +25,15 @@ export function safeFileName(id: string): string {
  * writes can ever share one.
  */
 export class FileWriter implements OrderWriter {
-  private readonly directory: string
-  private ready: Promise<void> | undefined
-  private sequence = 0
+  private readonly directory: string;
+  private directoryReady: Promise<void> | undefined;
+  private sequence = 0;
 
   /**
    * @param directory - where the files go. Created on the first write.
    */
   constructor(directory: string) {
-    this.directory = directory
+    this.directory = directory;
   }
 
   /**
@@ -44,13 +44,13 @@ export class FileWriter implements OrderWriter {
    * @returns Resolves once the file is in place under its final name.
    */
   async write(id: string, contents: string): Promise<void> {
-    this.ready ??= mkdir(this.directory, { recursive: true }).then(() => undefined)
-    await this.ready
+    this.directoryReady ??= mkdir(this.directory, { recursive: true }).then(() => undefined);
+    await this.directoryReady;
 
-    const target = join(this.directory, `purchaseorder_${safeFileName(id)}.json`)
-    const temporary = `${target}.${process.pid}.${this.sequence++}.tmp`
+    const target = join(this.directory, `purchaseorder_${safeFileName(id)}.json`);
+    const temporary = `${target}.${process.pid}.${this.sequence++}.tmp`;
 
-    await writeFile(temporary, contents, 'utf8')
-    await rename(temporary, target)
+    await writeFile(temporary, contents, 'utf8');
+    await rename(temporary, target);
   }
 }

@@ -6,30 +6,30 @@
  * the timer wins, otherwise every completed wait would leave one attached to a signal that
  * lives as long as the run.
  *
- * @param ms - how long to wait, in milliseconds
+ * @param durationMs - how long to wait, in milliseconds
  * @param signal - optional signal that cancels the wait
  * @returns Resolves when the time is up, rejects with the signal's reason if cancelled
  * first.
  */
-export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+export function sleep(durationMs: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {
-      reject(signal.reason)
-      return
+      reject(signal.reason);
+      return;
     }
 
-    let timer: ReturnType<typeof setTimeout>
+    let timer: ReturnType<typeof setTimeout>;
 
     const onAbort = () => {
-      clearTimeout(timer)
-      reject(signal?.reason)
-    }
+      clearTimeout(timer);
+      reject(signal?.reason);
+    };
 
     timer = setTimeout(() => {
-      signal?.removeEventListener('abort', onAbort)
-      resolve()
-    }, ms)
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, durationMs);
 
-    signal?.addEventListener('abort', onAbort, { once: true })
-  })
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
 }
