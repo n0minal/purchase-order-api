@@ -493,3 +493,68 @@ describe('the PurchaseOrderFetcher class', () => {
     expect(JSON.parse(written.get('offline-1')!).Source).toBe('fixture');
   });
 });
+
+describe('shutdown when listing fails', () => {
+  it('drains the detail fetches already in flight before the failure propagates', async () => {
+    // A failure on a later page leaves earlier orders mid-flight. Without a drain, those
+    // tasks carried on past the rejection: files appeared on disk after the caller had
+    // been told the run failed, and their successes landed on a summary nobody reads.
+    let settled = false;
+    const writesAfterSettle: string[] = [];
+    const written: string[] = [];
+
+    const { fetch } = stubFetch(async (url) => {
+      if (isPurchaseListRequest(url)) {
+        return Number(url.searchParams.get('Page')) === 1
+          ? purchaseListPageResponse(['a', 'b'], 4)
+          : new Response('bad credentials', { status: 401 });
+      }
+      // Slow enough that both details are still running when page 2 fails.
+      await new Promise((resolve) => setTimeout(resolve, 40));
+      return jsonResponse({ ID: url.searchParams.get('ID') });
+    });
+
+    const writer: OrderWriter = {
+      async write(id) {
+        written.push(id);
+        if (settled) writesAfterSettle.push(id);
+      },
+    };
+
+    await expect(
+      runFetch(
+        testClient(fetch, { maxRetries: 0 }),
+        writer,
+        baseFetchOptions({ pageSize: 2, maxConcurrency: 2 }),
+      ),
+    ).rejects.toThrow(/401/);
+
+    settled = true;
+    // Long enough that an undrained task would have landed by now.
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    expect(writesAfterSettle).toEqual([]);
+    // Both orders still complete. Draining waits for them, it does not cancel them.
+    expect(written.sort()).toEqual(['a', 'b']);
+  });
+
+  it('still reports the listing error, not one from the drained tasks', async () => {
+    // The drain sits in a finally block, so it must not replace the exception in flight.
+    const { fetch } = stubFetch(async (url) => {
+      if (isPurchaseListRequest(url)) {
+        return Number(url.searchParams.get('Page')) === 1
+          ? purchaseListPageResponse(['a'], 4)
+          : new Response('server exploded', { status: 500 });
+      }
+      return new Response('detail also broken', { status: 500 });
+    });
+
+    await expect(
+      runFetch(
+        testClient(fetch, { maxRetries: 0 }),
+        collectWrites().writer,
+        baseFetchOptions({ pageSize: 1, maxConcurrency: 2 }),
+      ),
+    ).rejects.toThrow(/purchaseList/);
+  });
+});

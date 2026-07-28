@@ -53,19 +53,21 @@ export class PurchaseOrderFetcher {
     // memory used to track them, so a run over a large account stays flat.
     const pendingOrderTasks = new Set<Promise<void>>();
 
-    for await (const id of listPurchaseOrders(this.client, this.options)) {
-      summary.listed++;
+    try {
+      for await (const id of listPurchaseOrders(this.client, this.options)) {
+        summary.listed++;
 
-      const task: Promise<void> = this.processPurchaseOrderById(id, summary).finally(() => {
-        pendingOrderTasks.delete(task);
-      });
-      pendingOrderTasks.add(task);
+        const task: Promise<void> = this.processPurchaseOrderById(id, summary).finally(() => {
+          pendingOrderTasks.delete(task);
+        });
+        pendingOrderTasks.add(task);
 
-      // processPurchaseOrderById never rejects, so neither of these can reject either.
-      if (pendingOrderTasks.size >= this.maxConcurrency) await Promise.race(pendingOrderTasks);
+        // processPurchaseOrderById never rejects, so neither of these can reject either.
+        if (pendingOrderTasks.size >= this.maxConcurrency) await Promise.race(pendingOrderTasks);
+      }
+    } finally {
+      await Promise.all(pendingOrderTasks);
     }
-
-    await Promise.all(pendingOrderTasks);
 
     return summary;
   }
